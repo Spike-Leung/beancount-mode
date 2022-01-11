@@ -64,6 +64,11 @@ complete the posting at point. The correct currency is determined
 from the open directive for the relevant account."
   :type 'boolean)
 
+(defcustom beancount-accounts-files nil
+  "A list of files to provide candidates for accounts completion."
+  :type 'list
+  :group 'beancount)
+
 (defgroup beancount-faces nil "Beancount mode highlighting" :group 'beancount)
 
 (defface beancount-directive
@@ -519,7 +524,7 @@ With an argument move to the next non cleared transaction."
                     (complete-with-action action candidates string pred))))
             (list (match-beginning 1) (match-end 1) completion-table))))))))
 
-(defun beancount-collect (regexp n)
+(defun beancount-collect (regexp n &optional files)
   "Return an unique list of REGEXP group N in the current buffer."
   (let ((pos (point)))
     (save-excursion
@@ -532,13 +537,21 @@ With an argument move to the next non cleared transaction."
             ;; we're currently trying to complete.
             (unless (<= (match-beginning 0) pos (match-end 0))
               (puthash (match-string-no-properties n) nil hash)))
+          ;; If `files' are provided, also look into them.
+          (when files
+            (save-excursion
+              (dolist (f files)
+                (with-current-buffer (find-file-noselect f)
+                  (goto-char (point-min))
+                  (while (re-search-forward regexp nil t)
+                    (puthash (match-string-no-properties n) nil hash))))))
           (hash-table-keys hash))))))
 
 (defun beancount-account-completion-table (string pred action)
   (if (eq action 'metadata) '(metadata (category . beancount-account))
     (if (null beancount-accounts)
         (setq beancount-accounts
-              (sort (beancount-collect beancount-account-regexp 0) #'string<)))
+              (sort (beancount-collect beancount-account-regexp 0 beancount-accounts-files) #'string<)))
     (complete-with-action action beancount-accounts string pred)))
 
 ;; Default to substring completion for beancount accounts.
@@ -649,7 +662,7 @@ Uses ido niceness according to `beancount-use-ido'."
         ;; completion tables thus directly build a list of the
         ;; accounts in the buffer
         (let ((beancount-accounts
-               (sort (beancount-collect beancount-account-regexp 0) #'string<)))
+               (sort (beancount-collect beancount-account-regexp 0 beancount-accounts-files) #'string<)))
           (ido-completing-read "Account: " beancount-accounts
                                nil nil (thing-at-point 'word)))
       (completing-read "Account: " #'beancount-account-completion-table
